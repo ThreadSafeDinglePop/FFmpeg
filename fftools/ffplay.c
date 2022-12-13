@@ -425,6 +425,9 @@ static int packet_queue_put_private(PacketQueue *q, AVPacket *pkt)
     pkt1.pkt = pkt;
     pkt1.serial = q->serial;
 
+    if (q->size >= 4096) {
+        return -1;
+    }
     ret = av_fifo_write(q->pkt_list, &pkt1, 1);
     if (ret < 0)
         return ret;
@@ -1337,7 +1340,7 @@ static int video_open(VideoState *is)
     SDL_SetWindowPosition(window, screen_left, screen_top);
     if (is_full_screen)
         SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    SDL_ShowWindow(window);
+    //SDL_ShowWindow(window);
 
     is->width  = w;
     is->height = h;
@@ -1564,6 +1567,8 @@ static void video_refresh(void *opaque, double *remaining_time)
 {
     VideoState *is = opaque;
     double time;
+    static double vPTS = 0.0;
+
 
     Frame *sp, *sp2;
 
@@ -1590,7 +1595,7 @@ retry:
             /* dequeue the picture */
             lastvp = frame_queue_peek_last(&is->pictq);
             vp = frame_queue_peek(&is->pictq);
-
+            vPTS = vp->pts;
             if (vp->serial != is->videoq.serial) {
                 frame_queue_next(&is->pictq);
                 goto retry;
@@ -1705,7 +1710,7 @@ display:
 
             av_bprint_init(&buf, 0, AV_BPRINT_SIZE_AUTOMATIC);
             av_bprintf(&buf,
-                      "%7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB sq=%5dB f=%"PRId64"/%"PRId64"   \r",
+                      "%7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB sq=%5dB vPTS=%f f=%"PRId64"/%"PRId64"   \r",
                       get_master_clock(is),
                       (is->audio_st && is->video_st) ? "A-V" : (is->video_st ? "M-V" : (is->audio_st ? "M-A" : "   ")),
                       av_diff,
@@ -1713,6 +1718,7 @@ display:
                       aqsize / 1024,
                       vqsize / 1024,
                       sqsize,
+                      vPTS,
                       is->video_st ? is->viddec.avctx->pts_correction_num_faulty_dts : 0,
                       is->video_st ? is->viddec.avctx->pts_correction_num_faulty_pts : 0);
 
@@ -2747,6 +2753,9 @@ static int is_realtime(AVFormatContext *s)
 /* this thread gets the stream from the disk or the network */
 static int read_thread(void *arg)
 {
+
+
+    //TODO FIGURE OUT WHAR IS GOING ON IN HWEER AND MAKE IT GOOOODD!!
     VideoState *is = arg;
     AVFormatContext *ic = NULL;
     int err, i, ret;
@@ -3457,6 +3466,9 @@ static void event_loop(VideoState *cur_stream)
                         cur_stream->vis_texture = NULL;
                     }
                 case SDL_WINDOWEVENT_EXPOSED:
+                    //send msg so Skycontrol can grab the window
+                    av_log(NULL, AV_LOG_INFO, "videoStarted\n");
+                    SDL_ShowWindow(window);
                     cur_stream->force_refresh = 1;
             }
             break;
@@ -3620,7 +3632,7 @@ static const OptionDef options[] = {
 
 static void show_usage(void)
 {
-    av_log(NULL, AV_LOG_INFO, "Simple media player\n");
+    av_log(NULL, AV_LOG_INFO, "Simple media player skyfish\n");
     av_log(NULL, AV_LOG_INFO, "usage: %s [options] input_file\n", program_name);
     av_log(NULL, AV_LOG_INFO, "\n");
 }
